@@ -1,0 +1,187 @@
+# NEAR AI Cloud: the upsides and downsides of using it as your inference provider
+
+*Notes after wiring it in as a provider across three coding agents.*
+
+NEAR AI Cloud is an OpenAI-compatible inference gateway that puts frontier
+models (Anthropic, OpenAI, Google) and open ones (Qwen, GLM, DeepSeek, Kimi)
+behind a single key and a single URL. The catalog isn't the differentiator —
+OpenRouter already does that. What is: inference runs inside TEEs (Intel TDX
+plus NVIDIA's GPU-level TEE), and you can ask for a cryptographic attestation
+that it actually did.
+
+I'm writing this after pointing three different agents at it — **OpenClaw**,
+**Hermes**, and **Pi** — not after reading the landing page. Both sides below
+are real.
+
+The short version: **it just works.** All three agents ran against it with a
+base URL and a key, no patches, no shims. What's missing isn't reliability —
+it's surface area: no TTS, no realtime voice, no video. More on that below.
+
+---
+
+## What's good
+
+### 1. It's a literal OpenAI drop-in
+
+`base_url = "https://cloud-api.near.ai/v1"` plus your key. The OpenAI SDK,
+LangChain, LiteLLM — anything that speaks Chat Completions works without
+touching anything else.
+
+Concretely, across the three agents:
+
+- **OpenClaw** — `openclaw onboard --classic`, pick a custom provider, paste
+  the base URL and the key. Because the model IDs are vendor-prefixed
+  (`anthropic/claude-sonnet-5`, not `claude-sonnet-5`), you type the full
+  prefixed ID when it asks for the model. That's the one gotcha.
+- **Hermes** — same story: OpenAI-compatible endpoint, `NEARAI_API_KEY`, done.
+- **Pi** — same again.
+
+Three agents, three configs, zero code changes. That's the actual headline.
+
+### 2. Verifiable privacy, not promised privacy
+
+This is the part traditional providers have no equivalent for. Everyone says
+"we don't train on your data"; here there's an endpoint —
+`GET /v1/attestation/report` — that returns the enclave's attestation. The gap
+between a privacy policy and a signed hardware quote is the gap between
+trusting and verifying.
+
+Who actually needs it: health, legal, fintech — anyone who today *can't* send
+the data to an LLM for compliance reasons. For a side project it's irrelevant,
+and you shouldn't pay complexity for it.
+
+### 3. A mixed catalog with list prices
+
+48 entries today, ~42 of them conversational, and the public catalog
+(`/v1/models`, no key needed) ships per-model pricing and metadata. A sample:
+
+| Model | Context | $/M in | $/M out |
+|---|---|---|---|
+| `anthropic/claude-sonnet-5` | 1M | 3.00 | 15.00 |
+| `openai/gpt-5.4` | 1.05M | 2.50 | 15.00 |
+| `google/gemini-2.5-flash` | 1M | 0.30 | 2.50 |
+| `z-ai/glm-5.2` | 1.05M | 1.40 | 4.40 |
+| `moonshotai/kimi-k2.6` | 262k | 0.81 | 3.85 |
+| `deepseek-ai/DeepSeek-V4-Flash` | 1.05M | 0.17 | 0.35 |
+| `openai/gpt-5-nano` | 400k | 0.05 | 0.40 |
+
+Frontier prices sit level with the original provider's list — you're not paying
+a visible toll for the TEE. And the range is wide enough to matter: Sonnet in
+the main loop, DeepSeek-V4-Flash (0.17/0.35) on the mechanical work, one key,
+one SDK.
+
+### 4. Out of the walled garden without changing code
+
+One client to try Qwen, GLM and Kimi against GPT and Claude, same request
+shape. Picking a model per task — which is where every serious agent ends up —
+is the concrete operational win, TEE aside.
+
+---
+
+## What's missing
+
+### 1. Text and images only: no TTS, no realtime voice, no video
+
+This is the biggest gap, and it's a gap in coverage rather than in quality.
+What's there works; what isn't there, isn't there yet:
+
+- **No TTS.** There's ASR (`whisper-large-v3`) for speech in, but nothing for
+  speech out. Any voice UX still needs a second provider.
+- **No realtime / streaming voice session API.** No equivalent of OpenAI's
+  Realtime or Anthropic's bidirectional streaming, so no low-latency
+  conversational voice.
+- **No video.** Not in, not out.
+
+Images are the exception and they're fully covered: vision input works on the
+multimodal chat models, and generation is there too
+(`black-forest-labs/FLUX.2-klein-4B`). So text and images are done — voice and
+video are the open items.
+
+If you're building a text or image agent, none of this touches you. If you want
+voice or video, NEAR AI Cloud covers the reasoning and you bring the rest.
+
+### 2. Latency overhead, and one more hop
+
+The docs themselves quote ~5–10% extra latency. Acceptable, but real — and it
+comes on top of there now being one more intermediary between your app and the
+model. When something breaks you have a third place for the problem to live and
+a third status page to check.
+
+### 3. It's a catalog of *products*, not chat models
+
+This was the concrete bug that cost me time. `/v1/models` is not a list of
+conversational models: it mixes an image generator, an ASR model
+(`whisper-large-v3`, context 448), an embedder, a reranker and a 512-token
+privacy filter in with the 42 chat models. Any integration doing
+`[m["id"] for m in data]` — which is most of them — will happily offer a
+diffusion model in the chat picker.
+
+Reading `input_modalities` / `output_modalities` / `context_length` fixes it,
+but you have to know to do it. And rerankers aren't distinguishable from
+metadata at all: they advertise as text→text with a normal context, so there
+you're stuck filtering by ID.
+
+### 4. Per-model metadata doesn't always match the model
+
+`anthropic/claude-opus-4-6` is listed as `input_modalities: ["text"]`, no
+image, when the upstream model does see images. Output ceilings aren't
+normalized across families either. If your code derives capabilities from the
+catalog, you'll want a per-model override hook — assuming the catalog is the
+truth will bite you on the vision path.
+
+### 5. Smaller API surface than going native
+
+It's Chat Completions, and that's it. What you give up versus hitting the
+provider directly: Anthropic's Messages API with its fine-grained cache
+control, OpenAI's Responses API, batch, fine-tuning, and generally any new
+feature arrives — if it arrives — late. The catalog does expose
+`input_cache_read` on most models, so prompt caching exists, but the gateway
+manages it, not you.
+
+### 6. Maturity and concentration risk
+
+It's a young provider. The API code is open source but under PolyForm Strict
+1.0.0 — readable, not commercially usable, not forkable in production, so "it's
+open source" is not an emergency exit. The public rate limits I found are on
+the order of 100 req/s per tenant, plenty for everything short of real scale.
+And it's one more dependency that could run out of funding: if your product
+lives on this, have the fallback to the native provider *written*, not
+imagined.
+
+Small but annoying: `docs.near.ai` returns 403 to automated fetchers, so
+neither your agent nor your scripts can read the documentation. In 2026 that
+stings more than it sounds.
+
+### 7. The TEE covers inference, not your architecture
+
+Easy to misread. The attestation proves the computation ran in an enclave; it
+says nothing about your logs, your conversation database, your telemetry, or
+what your own code does with the prompt before sending it. If the rest of the
+stack leaks, the TEE was decorative.
+
+---
+
+## When to use it, when not to
+
+**Use it if** you have a real privacy requirement that blocks you today
+(health, legal, fintech), or if you want one client to route between frontier
+and open models and 5–10% latency doesn't move your needle.
+
+**Don't** if you need Anthropic's or OpenAI's native features (Messages API,
+manual caching, batch, fine-tuning), if you're fighting for milliseconds, if
+you need voice or video in the same provider, or if "privacy" in your case
+means marketing rather than compliance — there you're paying an intermediary
+for nothing.
+
+**The middle ground, which is where I landed:** it's worth having configured as
+an alternate provider. Integration is cheap, there's one key, and the day the
+compliance requirement shows up it's already running. Three agents in and the
+text path has nothing I'd call a blocker — the roadmap items are TTS, realtime
+voice and video, and they're additions, not fixes.
+
+---
+
+*Sources: [NEAR AI Cloud](https://cloud.near.ai/) ·
+[docs.near.ai — Private Inference](https://docs.near.ai/cloud/private-inference/) ·
+[nearai/cloud-api](https://github.com/nearai/cloud-api) ·
+live catalog at `https://cloud-api.near.ai/v1/models` (checked 2026-08-19).*
