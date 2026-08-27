@@ -26,10 +26,13 @@ Eso sí, el chaleco amarillo se te puede colar por otro lado. Los harnesses, los
 ## Probándole los límites
 
 Ya que estaba, quería ver hasta dónde aguantaban los agentes corriendo sobre el gateway. Probé GPT-5-mini (anónimo) y google/gemma-4-31B-it (TEE), los dos como modelo de texto e imagen.
+Primero voy a generar la key en [cloud.near.ai](https://cloud.near.ai) y después la voy a usar en tres agentes distintos: Hermes, Pi Agent y OpenClaw.
+Para esto entramos a keys y aprentamos new keys, le ponemos un nombre y un limite que es opcional,despues la key se muestra una sola vez, ojo copiala ![near ai](nearai.png)
 
 ### Hermes
 
-Empezar por [Hermes](https://github.com/NousResearch/hermes-agent) fue un error, funciona tan bien que solo lo instalé y listo.
+Empezar por [Hermes](https://github.com/NousResearch/hermes-agent) fue un error, funciona tan bien que solo lo instalé y listo.Despues de instalarlo corri `hermes model`, elegir "your own endpoint" y pegar la URL que es https://cloud-api.near.ai/v1 y la key ahí listo.El resto de herramientas son muy intuitivas y no hace falta tocar nada más.
+
 
 Desde el dashboard le pedí cosas simples. Buscar cartas de Pokémon en Amazon y armar un listado. Una receta de torta de chocolate. Le pregunté qué había en una foto. Todo bien. Como me tenía que ir, lo conecté con Telegram para seguir desde el celular.
 Ahí empecé a buscarle el límite en serio. Le mandé un audio pidiendo que buscara otra vez cartas de Pokémon, esperando un "no puedo escuchar audio". Lo completó sin quejarse. Después le pedí que me contestara hablando y se escribió un script en Python para hacerlo. Por último le pedí una foto de un perrito, y parece que llamó a un nene de 5 años a dibujar un perro en Paint.
@@ -38,17 +41,39 @@ Ahí empecé a buscarle el límite en serio. Le mandé un audio pidiendo que bus
 
 El día que pueda armar mi propio R2-D2, este es uno de los modelos que usaría.
 
-### OpenClaw
-
-Después pasé por [OpenClaw](https://github.com/openclaw/openclaw) y me decepcionó. No logré configurarlo bien, el modelo alucinaba y nunca conseguí mandarle audio. Repetí lo mismo que con Hermes y la experiencia no se le acercó. Le pasé una captura del dashboard de gastos y le pregunté qué veía. Arrancó a describir instrucciones de sistema que no le había dado y terminó escupiendo la letra "a" durante veinte renglones.
-
-![Respuesta de OpenClaw](./openclaw.png)
-
 ### Pi Agent
 
-Por último probé [Pi Agent](https://pi.dev/), entiendo que es la base sobre la que se construyó OpenClaw, y esta vez lo usé para código. Me pareció simple y minimalista. Es como pasar de Eclipse o JetBrains a VS Code. Lo abrís, anda rápido, no tiene nada agregado, y entrás a plugins a instalar todo, hasta el VS Code de Pokémon que no sirve para nada pero está ahí.
+Después pasé por [Pi Agent](https://pi.dev/).Este es un poco más complejo de configurar tenes que modificar ~/.pi/agent/models.json y colocar algo como lo siguiente:
+{
+  "providers": {
+    "near-ai": {
+      "name": "NEAR AI Cloud",
+      "baseUrl": "https://cloud-api.near.ai/v1",
+      "apiKey": "$NEAR_AI_API_KEY",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "openai/gpt-5-mini",
+          "name": "GPT-5 Mini (near.ai)",
+          "reasoning": true,
+          "input": ["text"],
+          "cost": { "input": 0.25, "output": 2.0, "cac,
+          "contextWindow": 400000,
+          "maxTokens": 16384
+        }
+      ]
+    }
+  }
+ entiendo que es la base sobre la que se construyó OpenClaw, y esta vez lo usé para código. Me pareció simple y minimalista. Es como pasar de Eclipse o JetBrains a VS Code. Lo abrís, anda rápido, no tiene nada agregado, y entrás a plugins a instalar todo, hasta el VS Code de Pokémon que no sirve para nada pero está ahí.
 
 Lo usé para código y funciona muy bien. La sensación que me queda es que compite con [opencode](https://opencode.ai), o que es la base para un harness.
+
+### OpenClaw
+
+ Por último probé [OpenClaw](https://github.com/openclaw/openclaw) y me decepcionó. Para empezar, a configurarlo corri `openclaw config`,elegi local como gateway, luego entre a model, elegi "more",luego custom provider y pegue la URL https://cloud-api.near.ai/ y la key.Luego eleges OpenAI-compatible y un escribes un modelo como openai/gpt-5-mini verfica y listo.
+ No logré configurarlo bien, el modelo alucinaba y nunca conseguí mandarle audio. Repetí lo mismo que con Hermes y la experiencia no se le acercó. Le pasé una captura del dashboard de gastos y le pregunté qué veía. Arrancó a describir cualquier cosa y terminó escupiendo la letra "a" durante veinte renglones.
+
+![Respuesta de OpenClaw](./openclaw.png)
 
 ## Volviendo al chaleco
 
