@@ -29,7 +29,7 @@ While I was at it, I wanted to see how far the agents running on the gateway wou
 First I am going to generate the key at [cloud.near.ai](https://cloud.near.ai) and then use it in three different agents: Hermes, Pi Agent and OpenClaw.
 For that go into keys and hit new key, give it a name and a limit, which is optional, and then the key is shown only once, careful, copy it.
 
-![near ai](image.png)
+![near ai](nearai.png)
 
 ### Hermes
 
